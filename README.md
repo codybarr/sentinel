@@ -1,0 +1,95 @@
+# Sentinel
+
+An accountless PWA for private HTTP endpoint notifications. This foundation delivers Plan phases 0–2: a Vite + Svelte device wallet, Dexie persistence and recoverable provisioning, plus a TypeScript Cloudflare Worker/D1 management API.
+
+## Local development
+
+Requires Bun. Set up local secrets and D1 once, then start Vite:
+
+```sh
+bun install
+bun run setup
+bun dev
+```
+
+Open **http://localhost:5173** in your normal Chrome/Edge browser (not private browsing). `bun dev` runs Vite; the Cloudflare Vite plugin runs both Workers alongside the PWA with hot reload. There is no separate Wrangler server or proxy. The API, trigger URLs, and PWA all use port 5173. Local D1 state stays in `workers/api/.wrangler/state`, shared with `bun run db`. Ctrl-C stops the dev server and its Workers.
+
+`bun dev` does not generate keys, migrate D1, or build assets. No Cloudflare login or deployment is required; actual push delivery needs internet access.
+
+### Test a notification
+
+1. Click **Create endpoint**.
+2. Click **Enable** and allow notifications. If permission is already granted, click **Link device**.
+3. Click **Send a test notification**. It sends the same example title and body shown in the curl command while retaining the linked-device check. Push jobs dispatch without a batching delay; browser/OS delivery still depends on the push service.
+4. You can also copy and run the endpoint's curl command to trigger a notification. Send JSON `title` and `body` fields to customize its lock-screen text; missing, blank, or invalid fields fall back to `Sentinel` and `<endpoint name> received a request`. Keep sensitive content out of these fields: notification previews may be visible to others. The selected endpoint's activity updates immediately over SSE while visible, without polling. Returning to the app or reconnecting catches up on missed events.
+5. Use **Install app** to test in the standalone PWA. The same localhost origin retains your wallet and subscription.
+
+Allow your browser's notifications in macOS System Settings → Notifications, and turn off Focus if banners are suppressed. A queued response is not proof of delivery: inspect the running terminal for push-service errors. If a subscription expires, click **Link device** again. Automated browser profiles may reject push registration even when notification permission is granted; use your normal browser for the final delivery check.
+
+Always use `localhost:5173`, not `127.0.0.1:5173` or port 8787: each origin has a separate browser wallet, service worker, and notification permissions. Wallets previously created on port 8787 will not appear on port 5173. Local trigger URLs point to port 5173 and only work on this Mac; external webhook senders and phones require an HTTPS deployment/tunnel.
+
+- `bun run setup`: one-time local setup; runs `vapid` and `db` in that order.
+- `bun run vapid`: generate/reuse the local VAPID pair and sync its public key into the PWA; run again if keys change.
+- `bun run db`: apply local D1 migrations to the same `workers/api/.wrangler/state` used by `bun dev` when new migrations are added.
+- `bun run build`: typecheck the PWA and build the client and both Workers for deployment; not needed for `bun dev`.
+- `bun run test:local`: exercise provisioning, status updates, push preconditions, triggers, SSE authorization/fan-out/reconnection, events, and revocation against the running server.
+- `bun test`: SSE parsing, reconnection, cancellation, endpoint isolation, slow-client cleanup, and encrypted push delivery tests (mocked push service).
+- Live activity browser regression (requires `playwright-cli` and a running server): `playwright-cli -s=sentinel-live open http://localhost:5173`, then `playwright-cli -s=sentinel-live run-code --filename scripts/live-activity.playwright.js`. It verifies immediate activity delivery, no idle polling, and offline/reconnect catch-up without a page reload.
+
+Local secrets live in ignored `workers/push/.dev.vars`; only the matching public key is copied to `apps/pwa/.env.local`. Keep the key pair stable. Setup does not overwrite an existing private key. The local VAPID subject defaults to `https://example.com`; replace it with your contact URL or `mailto:` address before production.
+
+## Deployment
+
+For production, generate a separate VAPID key pair. Put its public key in `apps/pwa/.env.local`; never expose the private key through a `VITE_*` variable:
+
+```sh
+bunx web-push generate-vapid-keys --json
+# apps/pwa/.env.local
+VITE_VAPID_PUBLIC_KEY=<publicKey>
+```
+
+For deployment, update the D1 database ID in both Worker config files and the public origin in `workers/api/wrangler.toml`, then build and apply both migrations. Dev overrides the public origin to localhost; builds use the value from the Worker config.
+
+```sh
+bun run build
+bunx wrangler d1 execute sentinel --remote --config workers/api/wrangler.toml --file migrations/0001_foundation.sql
+bunx wrangler d1 execute sentinel --remote --config workers/api/wrangler.toml --file migrations/0002_push_delivery.sql
+bunx wrangler queues create sentinel-notifications
+bunx wrangler secret put VAPID_PUBLIC_KEY -c workers/push/wrangler.toml
+bunx wrangler secret put VAPID_PRIVATE_KEY -c workers/push/wrangler.toml
+bunx wrangler secret put VAPID_SUBJECT -c workers/push/wrangler.toml # e.g. mailto:alerts@example.com
+bun run push:deploy             # creates EventHub Durable Object namespace first
+bun run worker:deploy
+```
+
+The public key in the PWA and push Worker must be from the same VAPID key pair. Vite builds `apps/pwa/dist/client`, `apps/pwa/dist/sentinel_api`, and `apps/pwa/dist/sentinel_push`. The deploy scripts use the generated Worker configs; rebuild after changing production config or frontend environment variables. Only `dist/client` is public assets; Worker output can contain local `.dev.vars` for preview and must not be published as static files.
+
+The API Worker serves the client assets and always runs first for `/api/*` and `/h/*`. Deploy the push Worker first: it owns the `EventHub` Durable Object class and migration referenced by the API's cross-Worker `EVENTS` binding.
+
+## Delivered behavior
+
+- Generates independent 256-bit trigger and management credentials and stores only SHA-256 digests in D1.
+- Writes a local creation recovery secret before provisioning; retrying it recovers the same endpoint for 24 hours.
+- Persists the endpoint wallet transactionally in IndexedDB via Dexie.
+- Provides endpoint status controls, device linking, credential masking/copying, curl generation, event metadata viewing, deletion, install guidance, and offline wallet rendering.
+- Enforces POST-only header-authenticated triggers and a 64 KiB request limit. Trigger contents are never stored.
+
+Ingress records only event metadata, immediately publishes an activity invalidation to the endpoint's Durable Object, then queues a delivery job with bounded notification text (title up to 100 characters, body up to 500). Notification text is not stored in event history. The queue consumer processes one message at a time without waiting for a batch, retrieves the current linked subscription from D1, sends an encrypted VAPID-authenticated Web Push message, retries transient failures up to three times, and deactivates expired subscriptions.
+
+### Live activity (SSE)
+
+`GET /api/endpoints/:id/stream` requires the endpoint's management bearer token. The PWA uses streaming `fetch`, not native `EventSource`, so credentials stay in an Authorization header rather than URLs/logs. Each endpoint has its own `EventHub`; its subscribe/publish/revoke routes are only accessible through internal Durable Object bindings, never public Worker routes.
+
+A `ready` frame establishes the subscription before fetching the activity snapshot. Each subsequent `activity` frame reloads the latest 50 metadata records from D1. Reconnection takes a fresh snapshot, so dropped connections do not cause missing or duplicate history rows (this is not an unbounded replay log). Transient failures retry with backoff; lost heartbeats force reconnection. Revocation closes live streams and rejects new subscriptions. Slow clients are disconnected rather than buffered indefinitely.
+
+Streams pause when the page is hidden/offline and resume when visible/online. Connections rotate every 60 seconds to reauthorize and resync after missed invalidations. SSE connections keep Durable Objects active and incur duration charges; they do not use WebSocket hibernation. SSE updates the open app's activity only—OS notifications still use Web Push, avoiding duplicate notifications from two delivery paths.
+
+## Verification
+
+```sh
+bun check
+bun run build
+bun typecheck
+bun test
+bun run test:local               # with bun dev running
+```

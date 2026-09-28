@@ -1,0 +1,24 @@
+name = "sentinel-push"
+main = "src/index.ts"
+compatibility_date = "2025-02-20"
+
+[[queues.consumers]]
+queue = "sentinel-notifications"
+max_batch_size = 1
+max_batch_timeout = 0
+max_retries = 3
+
+[[d1_databases]]
+binding = "DB"
+database_name = "sentinel"
+database_id = "a3842cb1-1abf-4c89-943b-b37bab524143"
+
+[[durable_objects.bindings]]
+name = "EVENTS"
+class_name = "EventHub"
+
+[[migrations]]
+tag = "v1-event-hub"
+new_sqlite_classes = ["EventHub"]
+
+# Set VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT as Worker secrets.

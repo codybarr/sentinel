@@ -1,0 +1,26 @@
+name = "sentinel-api"
+main = "src/index.ts"
+compatibility_date = "2025-02-20"
+workers_dev = true
+
+[assets]
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/h/*"]
+
+[[queues.producers]]
+binding = "NOTIFICATIONS"
+queue = "sentinel-notifications"
+
+[[durable_objects.bindings]]
+name = "EVENTS"
+class_name = "EventHub"
+script_name = "sentinel-push"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "sentinel"
+database_id = "a3842cb1-1abf-4c89-943b-b37bab524143"
+
+[vars]
+# Set this to your public URL before building for deployment.
+PUBLIC_ORIGIN = "http://localhost:5173"

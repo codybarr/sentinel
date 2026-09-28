@@ -1,0 +1,28 @@
+{
+  "name": "sentinel",
+  "private": true,
+  "scripts": {
+    "dev": "bun run --filter @sentinel/pwa dev",
+    "setup": "bun run vapid && bun run db",
+    "vapid": "bun scripts/vapid.ts",
+    "db": "bun scripts/db.ts",
+    "test:local": "bun scripts/smoke-local.mjs && bun scripts/smoke-sse.mjs",
+    "test": "bun test",
+    "build": "bun run --filter @sentinel/pwa build",
+    "check": "bunx --bun @biomejs/biome check --write",
+    "typecheck": "bunx tsc --project tsconfig.json && bun run --filter @sentinel/pwa check && bun run --filter @sentinel/api check && bun run --filter @sentinel/push check",
+    "worker:deploy": "wrangler deploy -c apps/pwa/dist/sentinel_api/wrangler.json",
+    "push:deploy": "wrangler deploy -c apps/pwa/dist/sentinel_push/wrangler.json"
+  },
+  "workspaces": [
+    "apps/pwa",
+    "workers/api",
+    "workers/push"
+  ],
+  "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "@types/node": "^24",
+    "typescript": "^5.7.3",
+    "wrangler": "^4.143.0"
+  }
+}
