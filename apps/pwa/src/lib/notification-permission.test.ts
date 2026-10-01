@@ -31,6 +31,7 @@ function permissionFlow(
     },
     notificationState: permission,
     notificationReady: false,
+    notificationChecking: false,
     busy: false,
     error: "",
     endpoints: [{ id: "existing-endpoint" }],
@@ -63,6 +64,32 @@ test("restart restores granted notifications without requesting permission again
   expect(flow.context.notificationReady).toBe(true);
   expect(flow.requests).toBe(0);
   expect(flow.links).toBe(1);
+});
+
+test("background validation keeps the known ready state until it finishes", async () => {
+  const flow = permissionFlow("granted");
+  flow.context.notificationReady = true;
+  let finish = () => {};
+  flow.context.linkDevice = () =>
+    new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+  const pending = flow.enable(false);
+  expect(flow.context.notificationReady).toBe(true);
+  expect(flow.context.notificationChecking).toBe(true);
+  finish();
+  await pending;
+  expect(flow.context.notificationChecking).toBe(false);
+  expect(flow.context.notificationReady).toBe(true);
+});
+
+test("unsupported push clears the initial checking state", async () => {
+  const flow = permissionFlow("granted");
+  flow.context.notificationChecking = true;
+  flow.context.window.isSecureContext = false;
+  await flow.enable(false);
+  expect(flow.context.notificationChecking).toBe(false);
+  expect(flow.context.notificationState).toBe("unsupported");
 });
 
 test("a tap requests permission and links the device when granted", async () => {
