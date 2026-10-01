@@ -465,16 +465,29 @@ pre {
   position: fixed;
   z-index: 20;
   bottom: 20px;
-  padding: 12px 16px;
+  width: min(520px, calc(100vw - 40px));
+  padding: 9px 14px;
   font-size: 0.875rem;
-  line-height: 1.6;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
   border-radius: 4px;
   box-shadow: 0 6px 24px #0007;
-  max-width: min(440px, calc(100vw - 40px));
+  max-width: calc(100vw - 40px);
+  animation: notification-enter 180ms ease-out both;
+}
+@keyframes notification-enter {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
 }
 .error {
   right: 20px;
-  background: #351e24;
+  background: #1c1417;
   border: 1px solid #93535f;
   color: #ffbec8;
 }
@@ -485,9 +498,9 @@ pre {
 .toast {
   left: 50%;
   transform: translateX(-50%);
-  background: #23392f;
+  background: #101713;
   border: 1px solid #477c62;
-  color: #d4f8e6;
+  color: #ebf1ed;
 }
 @media (max-width: 440px) {
   :root {
@@ -511,6 +524,10 @@ pre {
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .error,
+  .toast {
+    animation: none;
+  }
   .switch span {
     transition: none;
   }
