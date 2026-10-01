@@ -45,7 +45,7 @@ playwright-cli -s=sentinel-payload run-code --filename scripts/notification-payl
 
 This checks title/body, expansion, keyboard collapse, copying, reload persistence, HTML escaping, and mobile layout. It saves screenshots to `/tmp/sentinel-payload-mobile.png` and `/tmp/sentinel-payload-desktop.png`.
 
-Local secrets live in ignored `workers/push/.dev.vars`; only the matching public key is copied to `apps/pwa/.env.local`. Keep the key pair stable. Setup does not overwrite an existing private key. The local VAPID subject defaults to `https://example.com`; replace it with your contact URL or `mailto:` address before production.
+Local secrets live in ignored `workers/push/.dev.vars`; only the matching public key is copied to `apps/pwa/.env.local`. Dev startup automatically synchronizes this public key before Vite loads its environment, including when starting Vite directly. Keep the key pair stable. Setup and dev startup do not overwrite an existing private key. If push delivery reports 403 or `VapidPkHashMismatch`, restart dev and reload the PWA; with permission already granted, it automatically replaces subscriptions made with an old key. Otherwise click **Enable notifications**, then **Send a test notification**. The local VAPID subject defaults to `https://example.com`; replace it with your contact URL or `mailto:` address before production.
 
 ## Deployment
 

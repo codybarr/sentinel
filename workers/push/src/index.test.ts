@@ -2,7 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { createECDH, randomBytes } from "node:crypto";
 import worker from "./index.ts";
 
-function fixture(status = 201) {
+function fixture(status = 201, responseBody: string | null = null) {
   const vapid = createECDH("prime256v1");
   vapid.generateKeys();
   const device = createECDH("prime256v1");
@@ -53,7 +53,7 @@ function fixture(status = 201) {
     expect(headers.get("authorization")).toMatch(/^vapid /);
     expect(headers.get("content-encoding")).toBe("aes128gcm");
     expect(payload.body.byteLength).toBeGreaterThan(0);
-    return new Response(null, { status });
+    return new Response(responseBody, { status });
   };
   return { env, message, writes, fetch };
 }
@@ -80,6 +80,33 @@ for (const status of [201, 410, 503]) {
         );
       }
       if (status === 503) expect(f.writes).toHaveLength(0);
+    } finally {
+      fetchMock.mockRestore();
+      errorMock.mockRestore();
+    }
+  });
+}
+
+for (const [status, responseBody] of [
+  [400, '{"reason":"VapidPkHashMismatch"}'],
+  [403, "VAPID public key does not match the subscription. secret-token"],
+] as const) {
+  test(`key mismatch ${status} reports recovery steps without leaking provider response or deleting subscriptions`, async () => {
+    const f = fixture(status, responseBody);
+    const fetchMock = spyOn(globalThis, "fetch").mockImplementation(f.fetch);
+    const errorMock = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await worker.queue({ messages: [f.message] }, f.env);
+      expect(f.message.retried).toBe(true);
+      expect(f.message.acked).toBe(false);
+      expect(f.writes).toHaveLength(0);
+      const logged = JSON.stringify(errorMock.mock.calls);
+      expect(logged).toContain("VAPID key mismatch");
+      expect(logged).toContain("enable notifications again");
+      expect(logged).not.toContain("secret-token");
+      expect(logged).not.toContain(f.env.VAPID_PRIVATE_KEY);
+      expect(logged).not.toContain(f.env.VAPID_PUBLIC_KEY);
+      expect(logged).not.toContain(f.env.VAPID_SUBJECT);
     } finally {
       fetchMock.mockRestore();
       errorMock.mockRestore();

@@ -133,5 +133,18 @@ async function deliver(
     ]);
     return;
   }
-  throw new Error(`Push service returned ${response.status}`);
+  const provider = new URL(subscription.endpoint).hostname;
+  // Never log the raw response: providers may echo subscription URLs or tokens.
+  const detail = await response.text();
+  const keyMismatch =
+    detail.includes("VapidPkHashMismatch") ||
+    (detail.includes("VAPID") && detail.includes("public key"));
+  const hint = keyMismatch
+    ? "VAPID key mismatch: sync the PWA and Worker public keys, then reload the PWA and enable notifications again"
+    : response.status === 401 || response.status === 403
+      ? "Check the VAPID key pair, subject, and browser subscription key"
+      : "Push provider rejected the notification";
+  throw new Error(
+    `Push service returned ${response.status} (${provider}). ${hint}`,
+  );
 }
