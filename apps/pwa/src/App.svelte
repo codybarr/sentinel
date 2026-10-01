@@ -1,17 +1,17 @@
 <script lang="ts">
 import {
-  ArrowLeft,
-  Bell,
-  Check,
-  ChevronRight,
-  Copy,
-  Plus,
-  RefreshCw,
-  Settings2,
-  Trash2,
-} from "@lucide/svelte";
+  IconArrowLeft as ArrowLeft,
+  IconBell as Bell,
+  IconCheck as Check,
+  IconChevronRight as ChevronRight,
+  IconPlus as Plus,
+  IconRefresh as RefreshCw,
+  IconAdjustmentsHorizontal as Settings2,
+  IconTrash as Trash2,
+} from "@tabler/icons-svelte";
 import { onMount } from "svelte";
 import { api } from "./lib/api";
+import CopyButton from "./lib/CopyButton.svelte";
 import { randomBase64Url, requestId, vapidKey } from "./lib/crypto";
 import { db } from "./lib/db";
 import { prettyPayload } from "./lib/payload";
@@ -163,8 +163,10 @@ async function copy(value: string, label: string) {
   try {
     await navigator.clipboard.writeText(value);
     show(`${label} copied.`);
+    return true;
   } catch {
     error = `Could not copy ${label.toLowerCase()}.`;
+    return false;
   }
 }
 async function enableNotifications(announce = true) {
@@ -400,7 +402,7 @@ onMount(() => {
 </script>
 
 <svelte:head><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/><link href="https://fonts.googleapis.com/css2?family=Wix+Madefor+Text:wght@400;500;600&display=swap" rel="stylesheet"/></svelte:head>
-<header class="app-header"><button class="brand" aria-label="Sentinel home" on:click={() => navigate("")}><span class="brand-symbol">◈</span> sentinel</button><div class="header-right">{#if notificationReady}<span class="ready"><Check size={14}/> notifications ready</span>{:else}<button class="enable" disabled={busy} on:click={() => enableNotifications()}><Bell size={15}/> Enable notifications</button>{/if}</div></header>
+<header class="app-header"><div class="header-inner"><button class="brand" aria-label="Sentinel home" on:click={() => navigate("")}><img class="brand-symbol" src="/icon.svg" alt="" width="28" height="28"/> sentinel</button><div class="header-right">{#if notificationReady}<span class="ready"><Check size={14}/> notifications ready</span>{:else}<button class="enable" disabled={busy} on:click={() => enableNotifications()}><Bell size={15}/> Enable notifications</button>{/if}</div></div></header>
 <main class="app-main">
   {#if !selected}
     <div class="page-heading"><div><p class="kicker">YOUR ENDPOINTS</p><h1>Endpoints{#if totalUnread}<span class="heading-count">{totalUnread}</span>{/if}</h1></div><button class="icon-action create-action" aria-label="Create endpoint" title="Create endpoint" disabled={busy} on:click={create}><Plus size={19}/></button></div>
@@ -409,14 +411,14 @@ onMount(() => {
     <div class="detail-nav"><button class="back" on:click={() => navigate("")}><ArrowLeft size={17}/> Endpoints</button><button class="icon-action" on:click={() => navigate(selected!.id, view === "settings" ? "inbox" : "settings")} aria-label={view === "settings" ? "View notifications" : "Endpoint settings"} title={view === "settings" ? "View notifications" : "Endpoint settings"}>{#if view === "settings"}<Bell size={19}/>{:else}<Settings2 size={19}/>{/if}</button></div>
     <div class="detail-heading"><p class="kicker">{view === "settings" ? "ENDPOINT SETTINGS" : "NOTIFICATIONS"}</p><h1>{selected.name}</h1>{#if view === "inbox"}<p class="subheading">{selected.enabled ? "Active" : "Paused"}</p>{/if}</div>
     {#if view === "inbox"}
-      <section class="notification-stack" aria-label="Recent notifications"><div class="list-caption"><span>Recent</span><span>{events.length} notifications</span></div>{#each events as event (event.id)}<details class="notification-card"><summary class="notification-summary"><span class="notification-icon"><Bell size={18}/></span><span class="notification-body"><span class="notification-top"><strong>{event.title ?? "Sentinel"}</strong><time datetime={event.receivedAt}>{new Date(event.receivedAt).toLocaleString()}</time></span><span class="notification-preview">{event.body ?? `${selected.name} received a request`}</span></span><ChevronRight size={16} class="notification-chevron"/></summary><div class="notification-payload"><div class="payload-toolbar"><small>{event.method} · {event.contentType || "unknown type"} · {event.byteCount.toLocaleString()} B</small>{#if event.payload != null}<button class="icon-action" aria-label="Copy payload" title="Copy payload" on:click={() => copy(prettyPayload(event.payload!), "Payload")}><Copy size={16}/></button>{/if}</div>{#if event.payload != null}<pre class="payload-json">{prettyPayload(event.payload)}</pre>{:else}<p class="payload-unavailable">Payload unavailable for this older notification.</p>{/if}</div></details>{:else}<p class="nothing">No notifications yet.</p>{/each}</section>
+      <section class="notification-stack" aria-label="Recent notifications"><div class="list-caption"><span>Recent</span><span>{events.length} notifications</span></div>{#each events as event (event.id)}<details class="notification-card"><summary class="notification-summary"><span class="notification-icon"><Bell size={18}/></span><span class="notification-body"><span class="notification-top"><strong>{event.title ?? "Sentinel"}</strong><time datetime={event.receivedAt}>{new Date(event.receivedAt).toLocaleString()}</time></span><span class="notification-preview">{event.body ?? `${selected.name} received a request`}</span></span><ChevronRight size={16} class="notification-chevron"/></summary><div class="notification-payload"><div class="payload-toolbar"><small>{event.method} · {event.contentType || "unknown type"} · {event.byteCount.toLocaleString()} B</small>{#if event.payload != null}<CopyButton label="Copy payload" onCopy={() => copy(prettyPayload(event.payload!), "Payload")}/>{/if}</div>{#if event.payload != null}<pre class="payload-json">{prettyPayload(event.payload)}</pre>{:else}<p class="payload-unavailable">Payload unavailable for this older notification.</p>{/if}</div></details>{:else}<p class="nothing">No notifications yet.</p>{/each}</section>
     {:else}
       <section class="settings-content"><div class="settings-heading"><h2>Endpoint details</h2><button class="icon-action" aria-label="Refresh endpoint" title="Refresh endpoint" disabled={busy} on:click={() => selected && sync(selected)}><RefreshCw size={16}/></button></div>
         <div class="setting-row"><span>Status</span><button class:active={selected.enabled} class="switch" role="switch" aria-checked={selected.enabled} aria-label="Toggle endpoint" disabled={busy} on:click={() => toggle("enabled")}><span></span></button></div>
         <div class="setting-row"><span>Notification delivery</span><button class:active={selected.notificationsEnabled} class="switch" role="switch" aria-checked={selected.notificationsEnabled} aria-label="Toggle notifications" disabled={busy} on:click={() => toggle("notificationsEnabled")}><span></span></button></div>
-        <div class="setting-block"><span>Trigger URL</span><div class="value-line"><code>{selected.url}</code><button class="icon-action" aria-label="Copy trigger URL" title="Copy trigger URL" on:click={() => copy(selected!.url, "URL")}><Copy size={16}/></button></div></div>
-        <div class="setting-block"><span>Trigger token</span><div class="value-line"><code>{reveal ? selected.triggerToken : "••••••••••••••••••••••••••••••••"}</code><button class="icon-action" aria-label="Copy trigger token" title="Copy trigger token" on:click={() => copy(selected!.triggerToken, "Token")}><Copy size={16}/></button></div><button class="inline-link" on:click={() => reveal = !reveal}>{reveal ? "Hide token" : "Reveal token"}</button></div>
-        <div class="setting-block"><div class="value-line"><span>curl / POST</span><button class="icon-action" aria-label="Copy curl command" title="Copy curl command" on:click={() => copy(curl, "curl command")}><Copy size={16}/></button></div><pre>{curl}</pre></div>
+        <div class="setting-block"><span>Trigger URL</span><div class="value-line"><code>{selected.url}</code>{#key selected.id}<CopyButton label="Copy trigger URL" onCopy={() => copy(selected!.url, "URL")}/>{/key}</div></div>
+        <div class="setting-block"><span>Trigger token</span><div class="value-line"><code>{reveal ? selected.triggerToken : "••••••••••••••••••••••••••••••••"}</code>{#key selected.id}<CopyButton label="Copy trigger token" onCopy={() => copy(selected!.triggerToken, "Token")}/>{/key}</div><button class="inline-link" on:click={() => reveal = !reveal}>{reveal ? "Hide token" : "Reveal token"}</button></div>
+        <div class="setting-block"><div class="value-line"><span>curl / POST</span>{#key selected.id}<CopyButton label="Copy curl command" onCopy={() => copy(curl, "curl command")}/>{/key}</div><pre>{curl}</pre></div>
         {#if notificationState === "granted" && selected.notificationsEnabled}<button class="test-action" disabled={busy} on:click={testPush}>Send a test notification ↗</button>{/if}
         <button class="revoke" disabled={busy} on:click={remove}><Trash2 size={16}/> Revoke endpoint</button>
         <p class="wallet-note">Access is held on this device. Clearing app data removes your local keys.</p>

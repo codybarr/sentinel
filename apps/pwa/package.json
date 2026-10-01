@@ -9,7 +9,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
-    "@lucide/svelte": "^1.47.0",
+    "@tabler/icons-svelte": "^3.48.0",
     "dexie": "^4.0.11",
     "svelte": "^5.20.0"
   },

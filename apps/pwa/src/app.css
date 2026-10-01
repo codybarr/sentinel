@@ -9,6 +9,8 @@
   --edge: #303a36;
   --highlight: #b7f0cc;
   --detail-font: "Wix Madefor Text", sans-serif;
+  --content-width: 680px;
+  --content-gutter: 20px;
 }
 * {
   box-sizing: border-box;
@@ -46,13 +48,18 @@ p {
 }
 .app-header {
   height: 64px;
+  background: #18221e;
+  border-bottom: 1px solid var(--edge);
+}
+.header-inner {
+  height: 100%;
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: 0 var(--content-gutter);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 0 max(20px, calc((100vw - 720px) / 2));
-  background: #18221e;
-  border-bottom: 1px solid var(--edge);
 }
 .brand {
   font-size: 1.125rem;
@@ -61,9 +68,10 @@ p {
   padding: 8px 0;
 }
 .brand-symbol {
-  color: var(--highlight);
-  font-size: 1.5rem;
-  line-height: 1;
+  display: block;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
 }
 .header-right {
   margin-left: auto;
@@ -86,10 +94,10 @@ p {
   white-space: nowrap;
 }
 .app-main {
-  max-width: 680px;
+  max-width: var(--content-width);
   min-height: calc(100dvh - 64px);
   margin: 0 auto;
-  padding: 28px 20px 60px;
+  padding: 28px var(--content-gutter) 60px;
 }
 .page-heading,
 .detail-nav {
@@ -482,9 +490,11 @@ pre {
   color: #d4f8e6;
 }
 @media (max-width: 440px) {
-  .app-header {
+  :root {
+    --content-gutter: 18px;
+  }
+  .header-inner {
     gap: 8px;
-    padding: 0 12px;
   }
   .brand {
     font-size: 1rem;
@@ -494,7 +504,7 @@ pre {
     padding: 8px;
   }
   .app-main {
-    padding: 25px 18px 60px;
+    padding: 25px var(--content-gutter) 60px;
   }
   .notification-top {
     flex-wrap: wrap;
