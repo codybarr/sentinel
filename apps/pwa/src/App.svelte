@@ -14,6 +14,7 @@ import { onMount } from "svelte";
 import { api } from "./lib/api";
 import { randomBase64Url, requestId, vapidKey } from "./lib/crypto";
 import { db } from "./lib/db";
+import { prettyPayload } from "./lib/payload";
 import type { Endpoint, EventRecord } from "./lib/types";
 
 let endpoints: Endpoint[] = [];
@@ -62,7 +63,15 @@ function show(message: string) {
   }, 3200);
 }
 async function refresh() {
-  endpoints = await db.endpoints.orderBy("createdAt").reverse().toArray();
+  endpoints = (await db.endpoints.orderBy("createdAt").reverse().toArray()).map(
+    (endpoint) =>
+      import.meta.env.DEV
+        ? {
+            ...endpoint,
+            url: new URL(`/h/${endpoint.name}`, location.origin).href,
+          }
+        : endpoint,
+  );
   if (selected) selected = endpoints.find((item) => item.id === selected?.id);
 }
 async function persist(endpoint: Endpoint) {
@@ -400,7 +409,7 @@ onMount(() => {
     <div class="detail-nav"><button class="back" on:click={() => navigate("")}><ArrowLeft size={17}/> Endpoints</button><button class="icon-action" on:click={() => navigate(selected!.id, view === "settings" ? "inbox" : "settings")} aria-label={view === "settings" ? "View notifications" : "Endpoint settings"} title={view === "settings" ? "View notifications" : "Endpoint settings"}>{#if view === "settings"}<Bell size={19}/>{:else}<Settings2 size={19}/>{/if}</button></div>
     <div class="detail-heading"><p class="kicker">{view === "settings" ? "ENDPOINT SETTINGS" : "NOTIFICATIONS"}</p><h1>{selected.name}</h1>{#if view === "inbox"}<p class="subheading">{selected.enabled ? "Active" : "Paused"}</p>{/if}</div>
     {#if view === "inbox"}
-      <section class="notification-stack" aria-label="Recent notifications"><div class="list-caption"><span>Recent</span><span>{events.length} notifications</span></div>{#each events as event (event.id)}<div class="notification-card"><div class="notification-icon"><Bell size={18}/></div><div class="notification-body"><div class="notification-top"><strong>Sentinel</strong><time datetime={event.receivedAt}>{new Date(event.receivedAt).toLocaleString()}</time></div><p>{selected.name} received a request</p><small>{event.method} · {event.contentType ?? "unknown type"} · {event.byteCount.toLocaleString()} B</small></div></div>{:else}<p class="nothing">No notifications yet.</p>{/each}</section>
+      <section class="notification-stack" aria-label="Recent notifications"><div class="list-caption"><span>Recent</span><span>{events.length} notifications</span></div>{#each events as event (event.id)}<details class="notification-card"><summary class="notification-summary"><span class="notification-icon"><Bell size={18}/></span><span class="notification-body"><span class="notification-top"><strong>{event.title ?? "Sentinel"}</strong><time datetime={event.receivedAt}>{new Date(event.receivedAt).toLocaleString()}</time></span><span class="notification-preview">{event.body ?? `${selected.name} received a request`}</span></span><ChevronRight size={16} class="notification-chevron"/></summary><div class="notification-payload"><div class="payload-toolbar"><small>{event.method} · {event.contentType || "unknown type"} · {event.byteCount.toLocaleString()} B</small>{#if event.payload != null}<button class="icon-action" aria-label="Copy payload" title="Copy payload" on:click={() => copy(prettyPayload(event.payload!), "Payload")}><Copy size={16}/></button>{/if}</div>{#if event.payload != null}<pre class="payload-json">{prettyPayload(event.payload)}</pre>{:else}<p class="payload-unavailable">Payload unavailable for this older notification.</p>{/if}</div></details>{:else}<p class="nothing">No notifications yet.</p>{/each}</section>
     {:else}
       <section class="settings-content"><div class="settings-heading"><h2>Endpoint details</h2><button class="icon-action" aria-label="Refresh endpoint" title="Refresh endpoint" disabled={busy} on:click={() => selected && sync(selected)}><RefreshCw size={16}/></button></div>
         <div class="setting-row"><span>Status</span><button class:active={selected.enabled} class="switch" role="switch" aria-checked={selected.enabled} aria-label="Toggle endpoint" disabled={busy} on:click={() => toggle("enabled")}><span></span></button></div>

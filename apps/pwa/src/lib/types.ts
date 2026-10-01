@@ -24,6 +24,9 @@ export type EventRecord = {
   method: string;
   contentType?: string;
   byteCount: number;
+  title?: string | null;
+  body?: string | null;
+  payload?: string | null;
 };
 export type RemoteEndpoint = Omit<
   Endpoint,

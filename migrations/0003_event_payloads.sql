@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS event_payloads (
+  event_id TEXT PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  payload TEXT NOT NULL
+);

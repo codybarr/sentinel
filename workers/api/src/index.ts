@@ -31,11 +31,68 @@ interface Event {
   method: string;
   contentType: string | null;
   byteCount: number;
+  title: string | null;
+  body: string | null;
+  payload: string | null;
 }
 
 const encoder = new TextEncoder();
-const notFound = () => json({ error: "Not found" }, 404);
-const bad = (message: string) => json({ error: message }, 400);
+const notFound = () => json({ error: "Not found", code: "NOT_FOUND" }, 404);
+const bad = (message: string) =>
+  json({ error: message, code: "INVALID_REQUEST" }, 400);
+
+class RequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code: string,
+    readonly example?: unknown,
+  ) {
+    super(message);
+  }
+}
+
+const notificationExample = {
+  title: "Build complete",
+  body: "The deployment succeeded",
+  payload: { bargle: "pop" },
+};
+
+function isJson(contentType: string | null): boolean {
+  return (
+    !!contentType &&
+    /^application\/(?:json|[\w.-]+\+json)(?:\s*;|\s*$)/i.test(contentType)
+  );
+}
+
+function parseJson(bytes: Uint8Array, example?: unknown): unknown {
+  try {
+    return JSON.parse(
+      new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes),
+    );
+  } catch {
+    throw new RequestError(
+      "Malformed JSON. Send a valid JSON payload.",
+      400,
+      "INVALID_JSON",
+      example,
+    );
+  }
+}
+
+async function requestJson(
+  request: Request,
+  example: unknown,
+): Promise<unknown> {
+  const payload = await limitedBody(request);
+  if (payload === null)
+    throw new RequestError(
+      "Payload too large. Maximum size is 64 KiB.",
+      413,
+      "PAYLOAD_TOO_LARGE",
+    );
+  return parseJson(payload.bytes, example);
+}
 const now = () => new Date().toISOString();
 const validId = (id: string) => id.length <= 128 && /^[a-zA-Z0-9-]*$/.test(id);
 
@@ -77,6 +134,19 @@ function randomToken(): string {
 
 function randomId(): string {
   return randomToken().slice(0, 22);
+}
+
+function publicOrigin(request: Request, env: Env): string {
+  const configured = new URL(env.PUBLIC_ORIGIN);
+  const actual = new URL(request.url);
+  // A dev server may use a different port when 5173 belongs to another app.
+  const local = (hostname: string) =>
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "[::1]";
+  return local(configured.hostname) && local(actual.hostname)
+    ? actual.origin
+    : configured.origin;
 }
 
 function remote(endpoint: StoredEndpoint): Response {
@@ -140,7 +210,7 @@ async function create(request: Request, env: Env): Promise<Response> {
       notificationsEnabled: true,
       createdAt: timestamp,
       updatedAt: timestamp,
-      url: `${env.PUBLIC_ORIGIN.replace(/\/$/, "")}/h/${endpointName}`,
+      url: `${publicOrigin(request, env)}/h/${endpointName}`,
     };
     try {
       // D1 batch is transactional: never leave a credential-bearing endpoint without its recovery record.
@@ -179,7 +249,13 @@ async function create(request: Request, env: Env): Promise<Response> {
       if (!String(error).includes("UNIQUE constraint failed")) throw error;
     }
   }
-  return json({ error: "Could not allocate endpoint. Retry shortly." }, 503);
+  return json(
+    {
+      error: "Could not allocate endpoint. Retry shortly.",
+      code: "ENDPOINT_ALLOCATION_FAILED",
+    },
+    503,
+  );
 }
 
 async function patch(
@@ -187,7 +263,10 @@ async function patch(
   env: Env,
   endpoint: StoredEndpoint,
 ): Promise<Response> {
-  const body: unknown = await request.json();
+  const body = await requestJson(request, {
+    enabled: true,
+    notificationsEnabled: true,
+  });
   if (typeof body !== "object" || body === null || Array.isArray(body))
     return bad("Invalid endpoint status");
   const values = body as Record<string, unknown>;
@@ -224,16 +303,18 @@ async function remove(env: Env, endpoint: StoredEndpoint): Promise<Response> {
     .bind(endpoint.id)
     .run();
   await notifyActivity(env, endpoint.id, "revoke");
-  return new Response(null, { status: 204 });
+  return json({ revoked: true });
 }
 
 async function events(env: Env, endpoint: StoredEndpoint): Promise<Response> {
   const rows = await env.DB.prepare(
-    "SELECT id,received_at AS receivedAt,method,content_type AS contentType,byte_count AS byteCount FROM events WHERE endpoint_id=?1 ORDER BY received_at DESC LIMIT 50",
+    "SELECT events.id,received_at AS receivedAt,method,content_type AS contentType,byte_count AS byteCount,title,body,payload FROM events LEFT JOIN event_payloads ON event_payloads.event_id=events.id WHERE endpoint_id=?1 ORDER BY received_at DESC LIMIT 50",
   )
     .bind(endpoint.id)
     .all<Event>();
-  return json({ events: rows.results });
+  const response = json({ events: rows.results });
+  response.headers.set("Cache-Control", "no-store");
+  return response;
 }
 
 async function device(
@@ -241,7 +322,10 @@ async function device(
   env: Env,
   endpoint: StoredEndpoint,
 ): Promise<Response> {
-  const body: unknown = await request.json();
+  const body = await requestJson(request, {
+    endpoint: "https://push-service.example/subscription",
+    keys: { p256dh: "<public key>", auth: "<auth secret>" },
+  });
   if (typeof body !== "object" || body === null)
     return bad("Invalid push subscription");
   const sub = body as {
@@ -286,6 +370,7 @@ async function testNotification(
     return json(
       {
         error: "Enable this endpoint and notification delivery before testing.",
+        code: "NOTIFICATIONS_DISABLED",
       },
       409,
     );
@@ -296,28 +381,40 @@ async function testNotification(
     .first();
   if (!linked)
     return json(
-      { error: "Link this browser before sending a test notification." },
+      {
+        error: "Link this browser before sending a test notification.",
+        code: "DEVICE_NOT_LINKED",
+      },
       409,
     );
   const payload = await limitedBody(request);
   if (payload === null)
-    return new Response("Payload too large", { status: 413 });
+    throw new RequestError(
+      "Payload too large. Maximum size is 64 KiB.",
+      413,
+      "PAYLOAD_TOO_LARGE",
+    );
+  if (isJson(request.headers.get("Content-Type")))
+    parseJson(payload.bytes, notificationExample);
   const event: Event = {
     id: randomId(),
     receivedAt: now(),
     method: "TEST",
-    contentType: null,
-    byteCount: 0,
-  };
-  await recordEvent(env, endpoint.id, event);
-  await notifyActivity(env, endpoint.id, "publish");
-  await env.NOTIFICATIONS.send({
-    eventId: event.id,
+    contentType: request.headers.get("Content-Type"),
+    byteCount: payload.size,
     ...notificationText(
       payload.bytes,
       request.headers.get("Content-Type"),
       endpoint.name,
     ),
+    payload: new TextDecoder().decode(payload.bytes),
+  };
+  await recordEvent(env, endpoint.id, event);
+  await notifyActivity(env, endpoint.id, "publish");
+  await env.NOTIFICATIONS.send({
+    eventId: event.id,
+    title: event.title ?? "Sentinel",
+    body: event.body ?? `${endpoint.name} received a request`,
   });
   return json({ queued: true, eventId: event.id });
 }
@@ -353,18 +450,21 @@ async function recordEvent(
   endpointId: string,
   event: Event,
 ): Promise<void> {
-  await env.DB.prepare(
-    "INSERT INTO events (id,endpoint_id,received_at,method,content_type,byte_count) VALUES (?1,?2,?3,?4,?5,?6)",
-  )
-    .bind(
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT INTO events (id,endpoint_id,received_at,method,content_type,byte_count) VALUES (?1,?2,?3,?4,?5,?6)",
+    ).bind(
       event.id,
       endpointId,
       event.receivedAt,
       event.method,
       event.contentType ?? "",
       event.byteCount,
-    )
-    .run();
+    ),
+    env.DB.prepare(
+      "INSERT INTO event_payloads (event_id,title,body,payload) VALUES (?1,?2,?3,?4)",
+    ).bind(event.id, event.title, event.body, event.payload),
+  ]);
 }
 
 async function limitedBody(
@@ -407,11 +507,7 @@ function notificationText(
     title: "Sentinel",
     body: `${endpointName} received a request`,
   };
-  if (
-    !contentType ||
-    !/^application\/(?:json|[\w.-]+\+json)(?:\s*;|\s*$)/i.test(contentType)
-  )
-    return defaults;
+  if (!isJson(contentType)) return defaults;
   try {
     const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
@@ -435,8 +531,14 @@ async function ingest(
   env: Env,
   name: string,
 ): Promise<Response> {
-  if (request.method !== "POST")
-    return new Response("Method not allowed", { status: 405 });
+  if (request.method !== "POST") {
+    const response = json(
+      { error: "Method not allowed. Use POST.", code: "METHOD_NOT_ALLOWED" },
+      405,
+    );
+    response.headers.set("Allow", "POST");
+    return response;
+  }
   const token = bearer(request, "Bearer");
   if (!name || !token) return notFound();
   const row = await env.DB.prepare(
@@ -451,48 +553,87 @@ async function ingest(
     return notFound();
   const payload = await limitedBody(request);
   if (payload === null)
-    return new Response("Payload too large", { status: 413 });
+    throw new RequestError(
+      "Payload too large. Maximum size is 64 KiB.",
+      413,
+      "PAYLOAD_TOO_LARGE",
+    );
   const contentType = request.headers.get("Content-Type");
+  if (isJson(contentType)) parseJson(payload.bytes, notificationExample);
   const event: Event = {
     id: randomId(),
     receivedAt: now(),
     method: "POST",
     contentType,
     byteCount: payload.size,
+    ...notificationText(payload.bytes, contentType, name),
+    payload: new TextDecoder().decode(payload.bytes),
   };
   await recordEvent(env, row.id, event);
   await notifyActivity(env, row.id, "publish");
   await env.NOTIFICATIONS.send({
     eventId: event.id,
-    ...notificationText(payload.bytes, contentType, name),
+    title: event.title ?? "Sentinel",
+    body: event.body ?? `${name} received a request`,
   });
   return json({ eventId: event.id }, 202);
 }
 
+async function route(request: Request, env: Env): Promise<Response> {
+  const path = new URL(request.url).pathname;
+  if (path === "/api/endpoints" && request.method === "POST")
+    return create(request, env);
+  if (path.startsWith("/h/")) return ingest(request, env, path.slice(3));
+  const match = /^\/api\/endpoints\/([^/]+)(?:\/([^/]+))?$/.exec(path);
+  if (!match) return notFound();
+  const endpoint = await authorize(request, env, match[1]);
+  if (!endpoint) return notFound();
+  const action = match[2];
+  if (!action) {
+    if (request.method === "GET") return remote(endpoint);
+    if (request.method === "PATCH") return patch(request, env, endpoint);
+    if (request.method === "DELETE") return remove(env, endpoint);
+  }
+  if (request.method === "GET" && action === "events")
+    return events(env, endpoint);
+  if (request.method === "GET" && action === "stream") {
+    const response = await eventHub(env, endpoint.id, "subscribe", "GET");
+    // Successful SSE is intentionally a stream; errors still follow the JSON contract.
+    return response.ok
+      ? response
+      : json(
+          { error: "Activity stream unavailable", code: "STREAM_UNAVAILABLE" },
+          response.status,
+        );
+  }
+  if (request.method === "PUT" && action === "device")
+    return device(request, env, endpoint);
+  if (request.method === "POST" && action === "test-notification")
+    return testNotification(request, env, endpoint);
+  return notFound();
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const path = new URL(request.url).pathname;
-    if (path === "/api/endpoints" && request.method === "POST")
-      return create(request, env);
-    if (path.startsWith("/h/")) return ingest(request, env, path.slice(3));
-    const match = /^\/api\/endpoints\/([^/]+)(?:\/([^/]+))?$/.exec(path);
-    if (!match) return notFound();
-    const endpoint = await authorize(request, env, match[1]);
-    if (!endpoint) return notFound();
-    const action = match[2];
-    if (!action) {
-      if (request.method === "GET") return remote(endpoint);
-      if (request.method === "PATCH") return patch(request, env, endpoint);
-      if (request.method === "DELETE") return remove(env, endpoint);
+    try {
+      return await route(request, env);
+    } catch (cause) {
+      if (cause instanceof RequestError) {
+        return json(
+          {
+            error: cause.message,
+            code: cause.code,
+            ...(cause.example === undefined ? {} : { example: cause.example }),
+          },
+          cause.status,
+        );
+      }
+      // Never expose database details, credentials, or request contents.
+      console.error("Sentinel API request failed unexpectedly");
+      return json(
+        { error: "Internal server error", code: "INTERNAL_ERROR" },
+        500,
+      );
     }
-    if (request.method === "GET" && action === "events")
-      return events(env, endpoint);
-    if (request.method === "GET" && action === "stream")
-      return eventHub(env, endpoint.id, "subscribe", "GET");
-    if (request.method === "PUT" && action === "device")
-      return device(request, env, endpoint);
-    if (request.method === "POST" && action === "test-notification")
-      return testNotification(request, env, endpoint);
-    return notFound();
   },
 } satisfies ExportedHandler<Env>;

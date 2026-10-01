@@ -71,7 +71,8 @@ try {
     headers,
     signal: AbortSignal.timeout(5000),
   });
-  assert.equal(revoked.status, 204);
+  assert.equal(revoked.status, 200);
+  assert.deepEqual(await revoked.json(), { revoked: true });
   deleted = true;
   for (const frame of await Promise.all(ending))
     assert.equal(frame.done, true, "Revocation closes active streams");

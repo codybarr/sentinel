@@ -5,7 +5,7 @@ const origin = process.env.SENTINEL_ORIGIN ?? "http://localhost:5173";
 async function request(path, options = {}, status = 200) {
   const response = await fetch(new URL(path, origin), options);
   assert.equal(response.status, status, `${options.method ?? "GET"} ${path}`);
-  if (status === 204 || status === 413) return;
+  assert.match(response.headers.get("Content-Type") ?? "", /application\/json/);
   return response.json();
 }
 const provisionHeaders = {
@@ -80,18 +80,33 @@ try {
     },
     413,
   );
+  const triggerHeaders = {
+    Authorization: `Bearer ${endpoint.triggerToken}`,
+    "Content-Type": "application/json",
+  };
+  const invalid = await request(
+    `/h/${endpoint.name}`,
+    { method: "POST", headers: triggerHeaders, body: '{"title":' },
+    400,
+  );
+  assert.equal(invalid.code, "INVALID_JSON");
+  assert.deepEqual(invalid.example.payload, { bargle: "pop" });
+  const payload = JSON.stringify({
+    title: "Build complete",
+    body: "The deployment succeeded",
+    payload: { bargle: "pop" },
+  });
   await request(
     `/h/${endpoint.name}`,
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${endpoint.triggerToken}` },
-      body: "smoke test",
-    },
+    { method: "POST", headers: triggerHeaders, body: payload },
     202,
   );
   const { events } = await request(`${path}/events`, { headers });
   assert.equal(events.length, 1);
   assert.equal(events[0].method, "POST");
+  assert.equal(events[0].payload, payload);
+  assert.equal(events[0].title, "Build complete");
+  assert.equal(events[0].body, "The deployment succeeded");
   console.log(
     "PASS: provisioning, API contract, delivery preconditions, trigger, and event history",
   );
@@ -100,10 +115,7 @@ try {
     method: "DELETE",
     headers,
   });
-  if (response.status !== 204)
-    console.error(
-      `FAIL: endpoint revocation returned ${response.status}, expected 204`,
-    );
-  else console.log("PASS: endpoint revocation");
-  assert.equal(response.status, 204);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { revoked: true });
+  console.log("PASS: endpoint revocation");
 }

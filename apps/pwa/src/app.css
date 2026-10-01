@@ -228,9 +228,7 @@ h1 {
   gap: 10px;
 }
 .notification-card {
-  display: flex;
-  gap: 13px;
-  padding: 16px;
+  min-width: 0;
   border: 1px solid #37423b;
   border-radius: 6px;
   background: #1c2421;
@@ -263,15 +261,69 @@ time {
   font: 0.75rem var(--detail-font);
   text-align: right;
 }
-.notification-body p {
-  margin: 10px 0 5px;
+.notification-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 16px;
+  cursor: pointer;
+  list-style: none;
+}
+.notification-summary::-webkit-details-marker {
+  display: none;
+}
+.notification-summary:focus-visible {
+  outline: 2px solid var(--highlight);
+  outline-offset: 3px;
+}
+.notification-top strong,
+.notification-preview {
+  overflow-wrap: anywhere;
+}
+.notification-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin-top: 8px;
   font-size: 1rem;
   line-height: 1.4;
+  white-space: pre-wrap;
 }
-.notification-body small {
+.notification-card[open] .notification-preview {
+  display: block;
+}
+.notification-chevron {
+  flex-shrink: 0;
+  margin-top: 8px;
   color: var(--dim);
-  font: 0.875rem var(--detail-font);
+}
+.notification-card[open] .notification-chevron {
+  transform: rotate(90deg);
+}
+.notification-payload {
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--edge);
+}
+.payload-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.payload-toolbar small,
+.payload-unavailable {
+  color: var(--dim);
+  font-size: 0.875rem;
   overflow-wrap: anywhere;
+}
+.payload-unavailable {
+  margin-top: 12px;
+}
+.payload-json {
+  max-height: 420px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 .settings-content {
   border-top: 1px solid var(--edge);
