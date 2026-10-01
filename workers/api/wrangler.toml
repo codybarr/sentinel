@@ -1,7 +1,8 @@
 name = "sentinel-api"
 main = "src/index.ts"
 compatibility_date = "2025-02-20"
-workers_dev = true
+workers_dev = false
+routes = [{ pattern = "sentinel.codybarr.dev", custom_domain = true }]
 
 [assets]
 not_found_handling = "single-page-application"
@@ -23,4 +24,4 @@ database_id = "a3842cb1-1abf-4c89-943b-b37bab524143"
 
 [vars]
 # Set this to your public URL before building for deployment.
-PUBLIC_ORIGIN = "http://localhost:5173"
+PUBLIC_ORIGIN = "https://sentinel.codybarr.dev"

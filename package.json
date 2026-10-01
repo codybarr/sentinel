@@ -9,6 +9,7 @@
     "test:local": "bun scripts/smoke-local.mjs && bun scripts/smoke-sse.mjs",
     "test": "bun test",
     "build": "bun run --filter @sentinel/pwa build",
+    "deploy": "bun run build && bun run push:deploy && bun run worker:deploy",
     "check": "bunx --bun @biomejs/biome check --write",
     "typecheck": "bunx tsc --project tsconfig.json && bun run --filter @sentinel/pwa check && bun run --filter @sentinel/api check && bun run --filter @sentinel/push check",
     "worker:deploy": "wrangler deploy -c apps/pwa/dist/sentinel_api/wrangler.json",

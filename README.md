@@ -40,6 +40,14 @@ Local secrets live in ignored `workers/push/.dev.vars`; only the matching public
 
 ## Deployment
 
+After initial production setup, redeploy the PWA and both Workers with:
+
+```sh
+bun run deploy
+```
+
+This builds fresh assets, deploys the push Worker first, then deploys the API Worker and PWA. It does not change secrets or apply database migrations.
+
 For production, generate a separate VAPID key pair. Put its public key in `apps/pwa/.env.local`; never expose the private key through a `VITE_*` variable:
 
 ```sh

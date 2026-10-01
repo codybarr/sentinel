@@ -171,7 +171,12 @@ async function enableNotifications(announce = true) {
     return;
   }
   try {
-    notificationState = await Notification.requestPermission();
+    // Restoring a PWA is not a user gesture. Reuse granted permission rather
+    // than asking again: iOS can reject requests made during startup.
+    notificationState = Notification.permission;
+    if (announce && notificationState !== "granted") {
+      notificationState = await Notification.requestPermission();
+    }
   } catch (cause) {
     error =
       cause instanceof Error
@@ -180,7 +185,11 @@ async function enableNotifications(announce = true) {
     return;
   }
   if (notificationState !== "granted") {
-    show("Notifications remain off. You can change this in browser settings.");
+    if (announce) {
+      show(
+        "Notifications remain off. You can change this in browser settings.",
+      );
+    }
     return;
   }
   busy = true;
